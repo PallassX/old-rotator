@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="ms">
+<head>
+  <meta charset="UTF-8" />
+  <title>Redirect Telegram | Auto Rotate</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    body { font-family: Arial, sans-serif; background:#f4f4f4; padding:24px; max-width:720px; margin:auto; text-align:center; }
+    h2 { margin-top:56px; }
+    .status { font-size:18px; margin-top:18px; color:#0a7c2f; }
+    .error { color:#b00020; }
+    .muted { color:#666; font-size:14px; margin-top:6px; }
+    .badge { display:inline-block; margin-top:10px; padding:6px 10px; border-radius:999px; background:#fff; border:1px solid #ddd; }
+    a.btn { display:inline-block; padding:8px 12px; border-radius:10px; border:1px solid #ddd; margin-top:10px; text-decoration:none; }
+  </style>
+</head>
+<body>
+  <h2>🔁 Sedang Semak Redirect (Rotate)</h2>
+  <div class="badge"><strong>Mode:</strong> Rotate</div>
+  <p class="status" id="status">⏳ Memeriksa tetapan...</p>
+  <p class="muted">Halaman ini auto-redirect. Tiada tindakan diperlukan.</p>
+
+  <script>
+    const statusEl  = document.getElementById("status");
+
+    // Helper: read localStorage safely
+    function readLS(key, fallback) {
+      try { const v = localStorage.getItem(key); return v === null ? fallback : JSON.parse(v); }
+      catch { return fallback; }
+    }
+
+    async function loadSettings() {
+      // 1) Load settings.json
+      let fileSettings = {};
+      try {
+        const res = await fetch('settings.json?_=' + Date.now());
+        if (res.ok) fileSettings = await res.json();
+      } catch (err) {
+        console.warn('Gagal load settings.json, teruskan dengan localStorage sahaja.', err);
+      }
+
+      // 2) Read localStorage state from admin.html
+      const lsAdmins = readLS("rotationAdmins", null);
+      const lsEnabled = readLS("rotateEnabled", null);
+      const lsIndexRaw = localStorage.getItem("rotationIndex");
+      const lsIndex = lsIndexRaw ? parseInt(lsIndexRaw, 10) : null;
+
+      // 3) Merge — localStorage overrides file if present
+      const rotationAdmins = (Array.isArray(lsAdmins) ? lsAdmins : fileSettings.rotationAdmins || [])
+        .map(a => ({ ...a, enabled: (a && a.enabled !== false) })); // default true
+
+      const rotateEnabled = (lsEnabled !== null) ? !!lsEnabled
+                           : (fileSettings.rotateEnabled !== false);
+
+      return { rotationAdmins, rotateEnabled, rotationIndex: (Number.isInteger(lsIndex) ? lsIndex : 0) };
+    }
+
+    function autoRotate({ rotationAdmins, rotateEnabled, rotationIndex }) {
+      // Debug guard: add ?debug=1 to disable redirect for testing
+      const url = new URL(window.location.href);
+      if (url.searchParams.get('debug') === '1') {
+        statusEl.textContent = "🧪 Debug mode: tiada redirect.";
+        return;
+      }
+
+      // Global OFF?
+      if (!rotateEnabled) {
+        statusEl.classList.add("error");
+        statusEl.textContent = "⛔ Rotate dimatikan oleh admin (Global OFF).";
+        return;
+      }
+
+      // Filter only enabled admins
+      const active = (rotationAdmins || []).filter(a => a && (a.enabled !== false) && a.link);
+      if (active.length === 0) {
+        statusEl.classList.add("error");
+        statusEl.textContent = "❌ Tiada admin aktif untuk rotate.";
+        return;
+      }
+
+      // Increment & persist index
+      rotationIndex = (rotationIndex + 1) % active.length;
+      localStorage.setItem("rotationIndex", String(rotationIndex));
+
+      const adm = active[rotationIndex];
+      statusEl.classList.remove("error");
+      statusEl.textContent = `🔁 Rotate ke: ${adm.name || 'admin'} (index ${rotationIndex}) — redirect sekarang...`;
+      setTimeout(() => { window.location.href = adm.link; }, 400);
+    }
+
+    (async function boot(){
+      const settings = await loadSettings();
+      if (!settings) {
+        statusEl.classList.add("error");
+        statusEl.textContent = "❌ Tidak dapat memuatkan tetapan.";
+        return;
+      }
+      autoRotate(settings);
+    })();
+  </script>
+</body>
+</html>
